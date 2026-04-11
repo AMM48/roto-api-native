@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 try:
     __version__ = version("roto-api-native")
 except PackageNotFoundError:
-    __version__ = "0.2.2"
+    __version__ = "0.2.3"
 
 
 def _load_roto_lookup_class():

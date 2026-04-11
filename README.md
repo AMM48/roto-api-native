@@ -130,22 +130,355 @@ If you build the snapshot yourself:
 
 ## Public API
 
-Functions:
+### ensure_data
 
-- `ensure_data(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
-- `load_lookup(data_dir)`
-- `open_lookup(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+Download and build the local routing snapshot if needed.
 
-Class:
+`ensure_data(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
 
-- `RotoLookup`
+Parameters
 
-Methods:
+`data_dir`
 
-- `RotoLookup.from_data_dir(data_dir)`
-- `RotoLookup.lookup_ip(ip)`
-- `RotoLookup.lookup_ips(ips)`
-- `RotoLookup.source_status()`
+The directory where snapshot files and cached downloads are stored.
+
+Type: `str | os.PathLike`
+
+`refresh`
+
+When enabled, re-download upstream sources and rebuild the snapshot even if the expected files already exist.
+
+Type: `bool`
+Default: `False`
+
+`del_ext_sources`
+
+Optional delegated-extended source URL overrides.
+
+Type: `Mapping[str, str] | None`
+Default: `None`
+
+`riswhois_sources`
+
+Optional RIS Whois source URL overrides.
+
+Type: `Mapping[str, str] | None`
+Default: `None`
+
+Return value
+
+A `pathlib.Path` pointing to the prepared data directory.
+
+Exceptions
+
+`OSError`
+
+If files cannot be created, replaced, or written.
+
+`urllib.error.URLError`
+
+If an upstream download fails.
+
+Example
+
+```python
+from roto_api import ensure_data
+
+data_dir = ensure_data("./data")
+```
+
+### load_lookup
+
+Load the native lookup engine from a prepared local data directory.
+
+`load_lookup(data_dir)`
+
+Parameters
+
+`data_dir`
+
+The path to a directory containing a prepared routing snapshot.
+
+Required filenames:
+- `delegated_all.csv`
+- at least one of `pfx_asn_dfz_v4.csv` or `pfx_asn_dfz_v6.csv`
+
+Optional filenames:
+- `del_ext.timestamps.json`
+- `riswhois.timestamps.json`
+
+Type: `str | os.PathLike`
+
+Return value
+
+A `RotoLookup` object.
+
+Exceptions
+
+`RuntimeError`
+
+If a required data file cannot be opened or parsed.
+
+`ValueError`
+
+If no RIS Whois CSV files are present in the data directory.
+
+Example
+
+```python
+from roto_api import load_lookup
+
+lookup = load_lookup("./data")
+```
+
+### open_lookup
+
+Ensure the snapshot exists, then load the native lookup engine.
+
+`open_lookup(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+
+Parameters
+
+`data_dir`
+
+Target data directory used for snapshot preparation and loading.
+
+Type: `str | os.PathLike`
+
+`refresh`
+
+When enabled, re-download upstream sources before loading the snapshot.
+
+Type: `bool`
+Default: `False`
+
+`del_ext_sources`
+
+Optional delegated-extended source URL overrides.
+
+Type: `Mapping[str, str] | None`
+Default: `None`
+
+`riswhois_sources`
+
+Optional RIS Whois source URL overrides.
+
+Type: `Mapping[str, str] | None`
+Default: `None`
+
+Return value
+
+A `RotoLookup` object.
+
+Exceptions
+
+`OSError`
+
+If snapshot files cannot be created or written during preparation.
+
+`urllib.error.URLError`
+
+If an upstream download fails during preparation.
+
+`RuntimeError`
+
+If the prepared data files cannot be opened or parsed.
+
+Example
+
+```python
+from roto_api import open_lookup
+
+lookup = open_lookup("./data", refresh=True)
+```
+
+### RotoLookup
+
+Build a lookup object from explicit file paths.
+
+`RotoLookup(prefixes_file, ris_files, timestamps_dir=None)`
+
+Parameters
+
+`prefixes_file`
+
+Path to the delegated allocations file, usually `delegated_all.csv`.
+
+Type: `str`
+
+`ris_files`
+
+One or more RIS Whois CSV files, typically one or both of:
+- `pfx_asn_dfz_v4.csv`
+- `pfx_asn_dfz_v6.csv`
+
+Type: `list[str]`
+
+`timestamps_dir`
+
+Directory containing optional timestamp metadata files. Defaults to the parent directory of `prefixes_file`.
+
+Type: `str | None`
+Default: `None`
+
+Return value
+
+A `RotoLookup` object.
+
+Exceptions
+
+`RuntimeError`
+
+If a required file cannot be opened or parsed.
+
+`ValueError`
+
+If `ris_files` is empty.
+
+Example
+
+```python
+from roto_api import RotoLookup
+
+lookup = RotoLookup(
+    prefixes_file="./data/delegated_all.csv",
+    ris_files=["./data/pfx_asn_dfz_v4.csv", "./data/pfx_asn_dfz_v6.csv"],
+    timestamps_dir="./data",
+)
+```
+
+### RotoLookup.from_data_dir
+
+Build a lookup object from a prepared data directory.
+
+`RotoLookup.from_data_dir(data_dir)`
+
+Parameters
+
+`data_dir`
+
+Directory containing:
+- `delegated_all.csv`
+- at least one of `pfx_asn_dfz_v4.csv` or `pfx_asn_dfz_v6.csv`
+
+May also contain:
+- `del_ext.timestamps.json`
+- `riswhois.timestamps.json`
+
+Type: `str`
+
+Return value
+
+A `RotoLookup` object.
+
+Exceptions
+
+`RuntimeError`
+
+If the data files cannot be opened or parsed.
+
+`ValueError`
+
+If no RIS Whois CSV files are found.
+
+Example
+
+```python
+from roto_api import RotoLookup
+
+lookup = RotoLookup.from_data_dir("./data")
+```
+
+### RotoLookup.lookup_ip
+
+Run a single-IP longest-prefix lookup.
+
+`lookup_ip(ip)`
+
+Parameters
+
+`ip`
+
+IPv4 or IPv6 address to look up.
+
+Type: `str`
+
+Return value
+
+A dictionary with:
+- `ip`
+- `prefix`
+- `origin_asns`
+- `match_type`
+
+Exceptions
+
+`ValueError`
+
+If `ip` is not a valid IPv4 or IPv6 address.
+
+Example
+
+```python
+result = lookup.lookup_ip("8.8.8.8")
+print(result["prefix"])
+print(result["origin_asns"])
+```
+
+### RotoLookup.lookup_ips
+
+Run longest-prefix lookup for multiple IPs in one Rust call.
+
+`lookup_ips(ips)`
+
+Parameters
+
+`ips`
+
+IPv4 and/or IPv6 addresses to look up.
+
+Type: `list[str]`
+
+Return value
+
+A list of dictionaries with the same schema as `lookup_ip`. Result order matches input order.
+
+Exceptions
+
+`ValueError`
+
+If any input IP is invalid.
+
+Example
+
+```python
+results = lookup.lookup_ips(["8.8.8.8", "1.1.1.1"])
+for row in results:
+    print(row["ip"], row["prefix"], row["origin_asns"])
+```
+
+### RotoLookup.source_status
+
+Return source metadata for the loaded snapshot.
+
+`source_status()`
+
+Return value
+
+A list of dictionaries containing:
+- `type`
+- `id`
+- `serial`
+- `last_updated`
+
+If timestamp metadata files are absent, this returns an empty list.
+
+Example
+
+```python
+for source in lookup.source_status():
+    print(source["id"], source["serial"], source["last_updated"])
+```
 
 The detailed reference is in `API.md` in the source repository.
 
