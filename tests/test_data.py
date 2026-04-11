@@ -2,7 +2,7 @@ from pathlib import Path
 import shutil
 import uuid
 
-import bootstrap_data as data_module
+from roto_api import data as data_module
 
 WORK_ROOT = Path(__file__).resolve().parent / ".work"
 
@@ -49,7 +49,7 @@ def test_ensure_data_skips_rebuild_when_all_files_exist(monkeypatch):
         monkeypatch.setattr(data_module, "build_delegated_all", fail)
         monkeypatch.setattr(data_module, "build_riswhois", fail)
 
-        result = data_module.prepare_data(tmp_path)
+        result = data_module.ensure_data(tmp_path)
 
         assert result == tmp_path
     finally:
@@ -84,7 +84,7 @@ def test_ensure_data_refresh_uses_resolved_sources(monkeypatch):
 
     tmp_path = make_work_dir()
     try:
-        result = data_module.prepare_data(
+        result = data_module.ensure_data(
             tmp_path,
             refresh=True,
             del_ext_sources={"arin": "https://override.example/arin"},
@@ -115,7 +115,7 @@ def test_ensure_data_only_rebuilds_missing_component(monkeypatch):
         (tmp_path / "delegated_all.csv").write_text("", encoding="utf-8")
         (tmp_path / "del_ext.timestamps.json").write_text("", encoding="utf-8")
 
-        result = data_module.prepare_data(tmp_path)
+        result = data_module.ensure_data(tmp_path)
 
         assert result == tmp_path
         assert captured["del_ext"] == 0

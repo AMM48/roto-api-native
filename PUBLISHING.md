@@ -26,7 +26,7 @@ From the repo root:
 
 ```bash
 cargo check
-python -m py_compile python/roto_api/__init__.py scripts/bootstrap_data.py scripts/query_ips_native.py
+python -m py_compile python/roto_api/__init__.py python/roto_api/data.py scripts/query_ips_native.py
 python -m pytest
 maturin build --release
 ```

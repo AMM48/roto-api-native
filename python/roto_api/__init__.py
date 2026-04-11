@@ -1,13 +1,17 @@
 """Public Python API for the ``roto-api-native`` package.
 
-The published package is intentionally load-only: it opens a prepared local
-dataset snapshot and performs lookups in the compiled Rust extension.
-Downloading and preparing dump data is handled outside the package.
+The package exposes:
+
+- ``ensure_data(...)`` to explicitly bootstrap or refresh a local snapshot
+- ``load_lookup(...)`` to load an existing snapshot
+- ``open_lookup(...)`` as a convenience wrapper that can bootstrap and load
 """
 
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
+
+from .data import ensure_data
 
 if TYPE_CHECKING:
     from ._native import RotoLookup as _RotoLookupType
@@ -15,7 +19,7 @@ if TYPE_CHECKING:
 try:
     __version__ = version("roto-api-native")
 except PackageNotFoundError:
-    __version__ = "0.2.1"
+    __version__ = "0.2.2"
 
 
 def _load_roto_lookup_class():
@@ -34,12 +38,28 @@ def load_lookup(data_dir):
     return _load_roto_lookup_class().from_data_dir(str(data_dir))
 
 
-def open_lookup(data_dir):
-    """Alias for ``load_lookup`` for callers that prefer a simpler verb."""
+def open_lookup(
+    data_dir,
+    refresh=False,
+    del_ext_sources=None,
+    riswhois_sources=None,
+):
+    """Ensure snapshot data exists, then load the native lookup engine.
+
+    ``open_lookup`` is the convenience entry point for callers who want one
+    function that can optionally refresh the upstream snapshot and then open it.
+    """
+    data_dir = ensure_data(
+        data_dir,
+        refresh=refresh,
+        del_ext_sources=del_ext_sources,
+        riswhois_sources=riswhois_sources,
+    )
     return load_lookup(data_dir)
 
 __all__ = [
     "RotoLookup",
+    "ensure_data",
     "load_lookup",
     "open_lookup",
     "__version__",

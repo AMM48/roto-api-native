@@ -1,168 +1,155 @@
 # roto-api-native
 
-`roto-api-native` packages the `roto-api` Rust lookup engine as an installable Python module.
+`roto-api-native` exposes the `roto-api` Rust lookup engine as an installable Python package for high-volume longest-prefix ASN/prefix enrichment.
 
-This package is an unofficial Python package/binding based on `NLnetLabs/roto-api`.
-It is not affiliated with or endorsed by NLnet Labs.
-Original project: `https://github.com/NLnetLabs/roto-api`
-License: `BSD-3-Clause`
+This package is an unofficial Python binding based on `NLnetLabs/roto-api`. It is not affiliated with or endorsed by NLnet Labs. The original project is licensed under BSD-3-Clause, and that upstream license is preserved here.
 
 Install name:
 - `roto-api-native`
 
-Python import name:
+Import name:
 - `roto_api`
 
-It is meant for high-volume offline lookups where HTTP-per-IP is too expensive. The native path keeps the routing data in Rust memory and lets Python call directly into that code.
+## Overview
 
-## What It Does
+The package can:
 
-- Loads `delegated_all.csv`, `pfx_asn_dfz_v4.csv`, `pfx_asn_dfz_v6.csv`, and the timestamp files into the Rust `Store`.
-- Exposes a Python class `roto_api.RotoLookup`.
+- download and prepare a local routing snapshot when you explicitly call `ensure_data(...)`
+- load that snapshot into the Rust lookup engine
+- run longest-prefix lookups entirely in-process from Python
 
-## What It Does Not Do
+The package does not:
 
-- It is not the HTTP server.
-- It does not include the Rust worker-pool API runtime.
-- It does not run a background monitor that watches dump URLs and hot-reloads automatically.
-- It does not download routing dumps on install, import, or lookup.
-
-For long-running or production use, prepare the data snapshot separately and then load it without any network access.
-
-## Data Flow
-
-1. An external script prepares a local dataset snapshot.
-2. `load_lookup(...)` or `RotoLookup.from_data_dir(...)` asks Rust to load that prepared snapshot into memory.
-3. `lookup_ip(...)` and `lookup_ips(...)` execute inside Rust and return compact Python dictionaries.
-
-The package does not download or transform dump data. It only loads already-prepared files from disk.
-
-## Recommended Dump Workflow
-
-The recommended pattern is:
-
-- your Python app or updater job downloads and prepares the local snapshot
-- your application code loads that snapshot with `load_lookup(...)`
-
-This separates:
-
-- dump download and transformation
-- snapshot validation and promotion
-- lookup serving
-
-That way your application process only reads a prepared snapshot and never depends on remote dump availability during startup.
-If you omit the optional timestamp metadata files from that snapshot, `source_status()` simply returns an empty list.
-
-## FFI
-
-FFI means Foreign Function Interface. In this project it is the boundary where Python calls compiled Rust code.
-
-Examples of FFI calls here:
-
-- `roto_api.RotoLookup.from_data_dir(...)`
-- `roto_api.RotoLookup.lookup_ip(...)`
-- `roto_api.RotoLookup.lookup_ips(...)`
-
-Those calls enter the compiled extension module `roto_api._native` built from `src/python.rs`.
-
-## Package Layout
-
-- `src/python.rs`: Rust bindings exposed to Python through PyO3.
-- `python/roto_api/__init__.py`: package exports.
-- `scripts/bootstrap_data.py`: optional script-side dump preparation helper.
-- `scripts/query_ips_native.py`: repo-local test wrapper that uses the package API directly.
-
-Additional docs:
-
-- `API.md`: public API reference
-- `PUBLISHING.md`: release and PyPI publishing checklist
+- install routing dumps at package install time
+- fetch data on plain `import roto_api`
+- provide the original HTTP API server
+- watch upstream dumps in the background or hot-reload automatically
 
 ## Install
 
-### From PyPI
-
-Once published, install it like any other package:
+From PyPI:
 
 ```bash
 pip install roto-api-native
 ```
 
-On Linux x86_64 this should prefer a prebuilt wheel. On unsupported platforms, `pip` can fall back to the source distribution and build locally if Rust is installed.
-
-### Build a wheel locally
+Build locally:
 
 ```powershell
 maturin build --release
-```
-
-### Install the built wheel
-
-```powershell
 $wheel = Get-ChildItem .\target\wheels\*.whl | Select-Object -First 1
-pip install --force-reinstall $wheel.FullName
+python -m pip install --force-reinstall $wheel.FullName
 ```
 
-### Linux source build
+## Quick Start
 
-```bash
-python -m pip install --upgrade pip maturin
-maturin build --release
-python -m pip install --force-reinstall target/wheels/roto_api_native-0.2.1-cp39-abi3-*.whl
-```
-
-## Use From Python
-
-Recommended explicit flow:
+One-step bootstrap and open:
 
 ```python
-from bootstrap_data import prepare_data
-from roto_api import load_lookup
+from roto_api import open_lookup
 
-prepare_data("./data")
-lookup = load_lookup("./data")
+lookup = open_lookup("./data")
 
 print(lookup.lookup_ip("8.8.8.8"))
 print(lookup.lookup_ips(["8.8.8.8", "1.1.1.1"]))
 print(lookup.source_status())
 ```
 
-## Use From The Repo Test Script
-
-```powershell
-python .\scripts\query_ips_native.py --data-dir .\data 8.8.8.8 1.1.1.1
-```
-
-Force fresh downloads:
-
-```powershell
-python .\scripts\query_ips_native.py --data-dir .\data --refresh 8.8.8.8 1.1.1.1
-```
-
-Override source URLs from Python:
+Explicit bootstrap and later load:
 
 ```python
-from bootstrap_data import prepare_data
+from roto_api import ensure_data, load_lookup
 
-prepare_data(
-    "./data",
-    refresh=True,
-    del_ext_sources={
-        "afrinic": "https://example.invalid/delegated-afrinic-extended-latest",
-    },
-    riswhois_sources={
-        "riswhois4": "https://example.invalid/riswhoisdump.IPv4.gz",
-    },
+data_dir = ensure_data("./data", refresh=False)
+lookup = load_lookup(data_dir)
+
+print(lookup.lookup_ip("8.8.8.8"))
+```
+
+Force a refresh:
+
+```python
+from roto_api import open_lookup
+
+lookup = open_lookup("./data", refresh=True)
+```
+
+## Snapshot Layout
+
+The convenience loaders expect a directory containing these filenames:
+
+- `delegated_all.csv`
+- `pfx_asn_dfz_v4.csv` and/or `pfx_asn_dfz_v6.csv`
+- optional metadata files:
+  - `del_ext.timestamps.json`
+  - `riswhois.timestamps.json`
+
+If you use:
+
+- `load_lookup(data_dir)`, or
+- `RotoLookup.from_data_dir(data_dir)`
+
+then those filenames matter. The loader does not search arbitrary names.
+
+If you need custom filenames, use:
+
+```python
+from roto_api import RotoLookup
+
+lookup = RotoLookup(
+    prefixes_file="./custom/delegated.csv",
+    ris_files=["./custom/ris_v4.csv", "./custom/ris_v6.csv"],
+    timestamps_dir="./custom",
 )
 ```
 
-Override source URLs from environment variables:
+## Manual File Format
 
-```bash
-export ROTO_API_DEL_EXT_AFRINIC_URL="https://example.invalid/delegated-afrinic-extended-latest"
-export ROTO_API_RISWHOIS_RISWHOIS4_URL="https://example.invalid/riswhoisdump.IPv4.gz"
-```
+If you build the snapshot yourself:
 
-## Upstream Data Sources
+`delegated_all.csv`
+- pipe-delimited delegated-extended records
+- no header row required
+- first row is treated as data
+
+`pfx_asn_dfz_v4.csv`
+- comma-separated
+- format per row: `prefix,length,asn`
+- example: `8.8.8.0,24,15169`
+- no header row required
+
+`pfx_asn_dfz_v6.csv`
+- comma-separated
+- format per row: `prefix,length,asn`
+- example: `2001:4860::,32,15169`
+- no header row required
+
+`del_ext.timestamps.json` and `riswhois.timestamps.json`
+- optional metadata files
+- despite the `.json` extension, these are CSV-formatted text files for compatibility with the original naming
+
+## Public API
+
+Functions:
+
+- `ensure_data(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+- `load_lookup(data_dir)`
+- `open_lookup(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+
+Class:
+
+- `RotoLookup`
+
+Methods:
+
+- `RotoLookup.from_data_dir(data_dir)`
+- `RotoLookup.lookup_ip(ip)`
+- `RotoLookup.lookup_ips(ips)`
+- `RotoLookup.source_status()`
+
+The detailed reference is in `API.md` in the source repository.
+
+## Upstream Sources
 
 Delegated RIR files:
 
@@ -177,61 +164,30 @@ RIS Whois dumps:
 - `https://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz`
 - `https://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz`
 
-## Size
-
-Typical artifacts are small because the wheel only contains the Python package code and the compiled native extension. The routing dumps are not bundled into the wheel.
-
-Check wheel size:
-
-```powershell
-Get-ChildItem .\target\wheels\*.whl | Select-Object Name,Length
-```
-
-Check installed package files:
-
-```powershell
-python -c "import roto_api, pathlib; p=pathlib.Path(roto_api.__file__).parent; print(p); [print(f'{f.name}`t{f.stat().st_size}') for f in p.rglob('*') if f.is_file()]"
-```
-
-## Cross-Platform Support
-
-There is no single native wheel that works on every operating system and CPU architecture. Native extensions must be built per target platform.
-
-This package is structured so you can build wheels for the common targets:
-
-- Windows x86_64
-- Linux x86_64
-- Linux aarch64
-- macOS x86_64
-- macOS arm64
-
-The `abi3` configuration means one wheel can cover multiple Python versions on the same platform, but not every platform.
-
-For architectures without a published wheel, the source distribution is the portability fallback. If the target machine has a supported Rust toolchain and Python headers/runtime, `pip install roto-api-native` can build the extension locally.
-
-## Build Wheels For Multiple Platforms
-
-The GitHub Actions workflows do two things:
-
-- `.github/workflows/pkg.yml` runs CI, builds wheels for the main targets, and produces an sdist.
-- `.github/workflows/publish.yml` publishes those artifacts to PyPI when you push a `v*` tag.
-
-Before enabling publishing, configure a PyPI trusted publisher for this GitHub repository and the `pypi` environment used by the workflow.
-
-Release flow:
-
-1. Bump the version in `pyproject.toml` and `Cargo.toml`.
-2. Commit and tag it, for example `v0.2.2`.
-3. Push the branch and tag.
-4. The publish workflow builds wheels and the sdist, then uploads them to PyPI.
+You can override these URLs via `ensure_data(...)` / `open_lookup(...)` parameters or environment variables.
 
 ## Why It Is Fast
 
-The native package is much faster than HTTP-per-IP because it removes:
+Compared with sending one HTTP request per IP, this package avoids:
 
-- socket I/O for every lookup
-- HTTP parsing for every lookup
-- JSON serialization and parsing for every lookup
-- request queueing between Python and a separate server process
+- socket I/O per lookup
+- HTTP parsing and response generation
+- JSON serialization/deserialization per lookup
+- Python-to-server process overhead
 
-The expensive work stays inside one Rust process and Python only crosses the boundary a small number of times.
+The hot lookup path stays inside one in-process Rust engine.
+
+## Platform Support
+
+Native wheels are platform-specific.
+
+This repo is currently set up to publish wheels for:
+
+- Linux x86_64
+- Windows x86_64
+
+An sdist can also be published so unsupported platforms may build locally if they have a suitable Rust toolchain.
+
+## Publishing
+
+Release and PyPI steps are documented in `PUBLISHING.md` in the source repository.

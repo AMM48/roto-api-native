@@ -1,15 +1,20 @@
-"""Dataset bootstrap helpers for local application scripts.
+"""Snapshot preparation helpers for ``roto_api``.
 
-This module is intentionally outside the published ``roto_api`` package.
-It handles downloading and transforming upstream routing data into the local
-CSV/timestamp snapshot that the native package can load.
+These helpers explicitly download and transform upstream routing datasets into
+the local CSV/timestamp snapshot expected by the native lookup engine.
+Nothing is downloaded at install time or import time. Call ``ensure_data(...)``
+when your application wants to bootstrap or refresh its local snapshot.
 """
+
+from __future__ import annotations
 
 import email.utils
 import gzip
 import os
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Tuple
+from typing import Dict, Mapping
+from typing import Optional
+from typing import Tuple
 import urllib.request
 
 
@@ -38,18 +43,23 @@ RISWHOIS_OUTPUTS = (
 
 
 def ensure_dir(path: Path) -> None:
+    """Create a directory if it does not already exist."""
     path.mkdir(parents=True, exist_ok=True)
 
 
 def http_date_from_mtime(path: Path) -> str:
+    """Return a file mtime formatted as an RFC2822 HTTP-style date."""
     timestamp = path.stat().st_mtime
     return email.utils.formatdate(timestamp, usegmt=True)
 
 
 def download_file(url: str, destination: Path) -> str:
+    """Download a file atomically and return its Last-Modified value if present."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = destination.with_suffix(destination.suffix + ".tmp")
-    with urllib.request.urlopen(url, timeout=120) as response, open(tmp_path, "wb") as handle:
+    with urllib.request.urlopen(url, timeout=120) as response, open(
+        tmp_path, "wb"
+    ) as handle:
         while True:
             chunk = response.read(1024 * 1024)
             if not chunk:
@@ -60,23 +70,33 @@ def download_file(url: str, destination: Path) -> str:
     return last_modified or http_date_from_mtime(destination)
 
 
-def write_del_ext_timestamps(data_dir: Path, metadata: Dict[str, Tuple[Path, str]]) -> None:
+def write_del_ext_timestamps(
+    data_dir: Path, metadata: Dict[str, Tuple[Path, str]]
+) -> None:
+    """Write delegated RIR source metadata for ``source_status()``."""
     output_path = data_dir / "del_ext.timestamps.json"
     tmp_path = output_path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
         handle.write("rir,file_timestamp,last_modified_header\n")
         for rir in ["afrinic", "apnic", "arin", "lacnic", "ripencc"]:
             source_path, last_modified = metadata[rir]
-            handle.write(f'{rir},{int(source_path.stat().st_mtime)},"{last_modified}"\n')
+            handle.write(
+                f'{rir},{int(source_path.stat().st_mtime)},"{last_modified}"\n'
+            )
     os.replace(tmp_path, output_path)
 
 
-def write_riswhois_timestamps(data_dir: Path, source_path: Path, last_modified: str) -> None:
+def write_riswhois_timestamps(
+    data_dir: Path, source_path: Path, last_modified: str
+) -> None:
+    """Write RIS Whois source metadata for ``source_status()``."""
     output_path = data_dir / "riswhois.timestamps.json"
     tmp_path = output_path.with_suffix(".tmp")
     with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
         handle.write("rir,file_timestamp,last_modified_header\n")
-        handle.write(f'riswhois,{int(source_path.stat().st_mtime)},"{last_modified}"\n')
+        handle.write(
+            f'riswhois,{int(source_path.stat().st_mtime)},"{last_modified}"\n'
+        )
     os.replace(tmp_path, output_path)
 
 
@@ -85,6 +105,7 @@ def resolve_sources(
     overrides: Optional[Mapping[str, str]],
     env_prefix: str,
 ) -> Dict[str, str]:
+    """Merge default source URLs with caller overrides and env var overrides."""
     resolved = dict(defaults)
     if overrides:
         resolved.update(overrides)
@@ -102,6 +123,7 @@ def build_delegated_all(
     refresh: bool,
     sources: Mapping[str, str],
 ) -> None:
+    """Download delegated extended files and concatenate them into one snapshot."""
     metadata = {}
     combined_path = data_dir / "delegated_all.csv"
     tmp_combined = combined_path.with_suffix(".tmp")
@@ -139,12 +161,17 @@ def _write_riswhois_csv_row(line: str, csv_handle) -> None:
 
 
 def build_riswhois_csv(gzip_path: Path, raw_path: Path, csv_path: Path) -> None:
+    """Expand a RIS gzip dump into raw text and the compact CSV consumed by Rust."""
     tmp_raw = raw_path.with_suffix(".tmp")
     tmp_csv = csv_path.with_suffix(".tmp")
 
-    with gzip.open(gzip_path, "rt", encoding="utf-8", errors="replace") as gz_handle, open(
+    with gzip.open(
+        gzip_path, "rt", encoding="utf-8", errors="replace"
+    ) as gz_handle, open(
         tmp_raw, "w", encoding="utf-8", newline=""
-    ) as raw_handle, open(tmp_csv, "w", encoding="utf-8", newline="") as csv_handle:
+    ) as raw_handle, open(
+        tmp_csv, "w", encoding="utf-8", newline=""
+    ) as csv_handle:
         for line in gz_handle:
             raw_handle.write(line)
             _write_riswhois_csv_row(line, csv_handle)
@@ -154,10 +181,11 @@ def build_riswhois_csv(gzip_path: Path, raw_path: Path, csv_path: Path) -> None:
 
 
 def build_riswhois_csv_from_raw(raw_path: Path, csv_path: Path) -> None:
+    """Rebuild the compact RIS CSV from a previously cached raw dump."""
     tmp_csv = csv_path.with_suffix(".tmp")
-    with open(raw_path, "r", encoding="utf-8", errors="replace", newline="") as raw_handle, open(
-        tmp_csv, "w", encoding="utf-8", newline=""
-    ) as csv_handle:
+    with open(
+        raw_path, "r", encoding="utf-8", errors="replace", newline=""
+    ) as raw_handle, open(tmp_csv, "w", encoding="utf-8", newline="") as csv_handle:
         for line in raw_handle:
             _write_riswhois_csv_row(line, csv_handle)
 
@@ -170,6 +198,7 @@ def build_riswhois(
     refresh: bool,
     sources: Mapping[str, str],
 ) -> None:
+    """Download and build IPv4/IPv6 RIS Whois CSV snapshots."""
     csv_v4 = data_dir / "pfx_asn_dfz_v4.csv"
     csv_v6 = data_dir / "pfx_asn_dfz_v6.csv"
     raw_v4 = downloads_dir / "riswhois4"
@@ -205,13 +234,27 @@ def build_riswhois(
     )
 
 
-def prepare_data(
+def ensure_data(
     data_dir,
     refresh: bool = False,
     del_ext_sources: Optional[Mapping[str, str]] = None,
     riswhois_sources: Optional[Mapping[str, str]] = None,
 ) -> Path:
-    """Ensure the local lookup dataset exists and return its directory."""
+    """Ensure a local routing snapshot exists and return its directory.
+
+    Parameters
+    ----------
+    data_dir:
+        Target directory where snapshot files and cached downloads are stored.
+    refresh:
+        When true, re-download upstream data and rebuild the snapshot even if
+        all expected files already exist.
+    del_ext_sources:
+        Optional mapping of delegated-extended source URL overrides.
+    riswhois_sources:
+        Optional mapping of RIS Whois source URL overrides.
+    """
+
     data_dir = Path(data_dir)
     del_ext_dir = data_dir / "downloads" / "del_ext"
     ris_dir = data_dir / "downloads" / "riswhois"

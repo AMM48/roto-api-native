@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
 import argparse
-import sys
 import time
 
-from bootstrap_data import prepare_data
-
-
 try:
-    from roto_api import load_lookup
+    from roto_api import open_lookup
 except ModuleNotFoundError as err:
     raise SystemExit(
         "roto_api is not installed in this Python environment.\n"
         "Install the package first, for example:\n"
-        "  python -m pip install --force-reinstall .\\target\\wheels\\roto_api_native-0.2.1-cp39-abi3-win_amd64.whl"
+        "  python -m pip install --force-reinstall .\\target\\wheels\\roto_api_native-*.whl"
     ) from err
 except ImportError as err:
     raise SystemExit(
-        "roto_api is installed, but it is an older build that does not expose load_lookup.\n"
+        "roto_api is installed, but it is an older build that does not expose the current public API.\n"
         "Rebuild and reinstall the current package, for example:\n"
         "  maturin build --release\n"
-        "  python -m pip install --force-reinstall .\\target\\wheels\\roto_api_native-0.2.1-cp39-abi3-win_amd64.whl"
+        "  python -m pip install --force-reinstall .\\target\\wheels\\roto_api_native-*.whl"
     ) from err
 
 
@@ -62,8 +58,7 @@ def main(argv=None):
         parser.error("provide at least one IP or use --file")
 
     started_at = time.perf_counter()
-    data_dir = prepare_data(args.data_dir, refresh=args.refresh)
-    lookup = load_lookup(data_dir)
+    lookup = open_lookup(args.data_dir, refresh=args.refresh)
     results = lookup.lookup_ips(ips)
 
     print("#\tIP\tPrefix\tOrigin ASN(s)")

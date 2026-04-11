@@ -16,13 +16,27 @@ def make_work_dir() -> Path:
 
 
 def test_open_lookup_bootstraps_then_loads_native(monkeypatch):
-    captured = {}
+    captured = {"ensure_data_args": None}
 
     class FakeLookup:
         @staticmethod
         def from_data_dir(path):
             captured["path"] = path
             return {"loaded_from": path}
+
+    def fake_ensure_data(
+        data_dir,
+        refresh=False,
+        del_ext_sources=None,
+        riswhois_sources=None,
+    ):
+        captured["ensure_data_args"] = {
+            "data_dir": data_dir,
+            "refresh": refresh,
+            "del_ext_sources": del_ext_sources,
+            "riswhois_sources": riswhois_sources,
+        }
+        return Path(data_dir)
 
     tmp_path = make_work_dir()
     try:
@@ -31,11 +45,18 @@ def test_open_lookup_bootstraps_then_loads_native(monkeypatch):
             "roto_api._native",
             SimpleNamespace(RotoLookup=FakeLookup),
         )
+        monkeypatch.setattr(roto_api, "ensure_data", fake_ensure_data)
 
-        result = roto_api.open_lookup(tmp_path)
+        result = roto_api.open_lookup(tmp_path, refresh=True)
 
         assert result == {"loaded_from": str(tmp_path)}
         assert captured["path"] == str(tmp_path)
+        assert captured["ensure_data_args"] == {
+            "data_dir": tmp_path,
+            "refresh": True,
+            "del_ext_sources": None,
+            "riswhois_sources": None,
+        }
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)
 
@@ -72,3 +93,7 @@ def test_load_lookup_uses_prepared_directory(monkeypatch):
 
     assert result == {"loaded_from": str(Path("prepared") / "snapshot")}
     assert captured["path"] == str(Path("prepared") / "snapshot")
+
+
+def test_ensure_data_is_exported():
+    assert callable(roto_api.ensure_data)
