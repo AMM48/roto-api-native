@@ -556,8 +556,6 @@ This repo is currently set up to publish wheels for:
 
 - Linux x86_64
 - Windows x86_64
-- macOS x86_64
-- macOS arm64
 
 An sdist can also be published so unsupported platforms may build locally if they have a suitable Rust toolchain.
 
