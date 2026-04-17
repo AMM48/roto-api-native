@@ -37,6 +37,7 @@ dev = [
 python-source = "python"
 module-name = "roto_api._native"
 bindings = "pyo3"
+features = ["extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
