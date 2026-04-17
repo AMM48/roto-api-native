@@ -15,7 +15,7 @@ from .data import ensure_data
 try:
     __version__ = version("roto-api-native")
 except PackageNotFoundError:
-    __version__ = "0.2.3"
+    __version__ = "0.2.4"
 
 
 def _load_roto_lookup_class():
