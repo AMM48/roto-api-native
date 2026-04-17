@@ -76,18 +76,18 @@ lookup = open_lookup("./data", refresh=True)
 
 ## Snapshot Layout
 
-The convenience loaders expect a directory containing these filenames:
+The convenience loaders expect a directory containing:
 
-- `delegated_all.csv`
 - `pfx_asn_dfz_v4.csv` and/or `pfx_asn_dfz_v6.csv`
+- optional `delegated_all.csv` when `include_delegated=True`
 - optional metadata files:
-  - `del_ext.timestamps.json`
+  - `del_ext.timestamps.json` when `include_delegated=True`
   - `riswhois.timestamps.json`
 
 If you use:
 
 - `load_lookup(data_dir)`, or
-- `RotoLookup.from_data_dir(data_dir)`
+- `RotoLookup.from_data_dir(data_dir, include_delegated=False)`
 
 then those filenames matter. The loader does not search arbitrary names.
 
@@ -97,8 +97,8 @@ If you need custom filenames, use:
 from roto_api import RotoLookup
 
 lookup = RotoLookup(
-    prefixes_file="./custom/delegated.csv",
     ris_files=["./custom/ris_v4.csv", "./custom/ris_v6.csv"],
+    prefixes_file="./custom/delegated.csv",
     timestamps_dir="./custom",
 )
 ```
@@ -108,7 +108,7 @@ lookup = RotoLookup(
 If you build the snapshot yourself:
 
 `delegated_all.csv`
-- pipe-delimited delegated-extended records
+- optional pipe-delimited delegated-extended records
 - no header row required
 - first row is treated as data
 
@@ -134,7 +134,7 @@ If you build the snapshot yourself:
 
 Download and build the local routing snapshot if needed.
 
-`ensure_data(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+`ensure_data(data_dir, refresh=False, include_delegated=False, del_ext_sources=None, riswhois_sources=None)`
 
 Parameters
 
@@ -147,6 +147,13 @@ Type: `str | os.PathLike`
 `refresh`
 
 When enabled, re-download upstream sources and rebuild the snapshot even if the expected files already exist.
+
+Type: `bool`
+Default: `False`
+
+`include_delegated`
+
+When enabled, also download and prepare delegated RIR allocation files. The default path is RIS/BGP-only.
 
 Type: `bool`
 Default: `False`
@@ -200,7 +207,6 @@ Parameters
 The path to a directory containing a prepared routing snapshot.
 
 Required filenames:
-- `delegated_all.csv`
 - at least one of `pfx_asn_dfz_v4.csv` or `pfx_asn_dfz_v6.csv`
 
 Optional filenames:
@@ -235,7 +241,7 @@ lookup = load_lookup("./data")
 
 Ensure the snapshot exists, then load the native lookup engine.
 
-`open_lookup(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+`open_lookup(data_dir, refresh=False, include_delegated=False, del_ext_sources=None, riswhois_sources=None)`
 
 Parameters
 
@@ -248,6 +254,13 @@ Type: `str | os.PathLike`
 `refresh`
 
 When enabled, re-download upstream sources before loading the snapshot.
+
+Type: `bool`
+Default: `False`
+
+`include_delegated`
+
+When enabled, also bootstrap delegated RIR allocation data before loading.
 
 Type: `bool`
 Default: `False`
@@ -296,15 +309,9 @@ lookup = open_lookup("./data", refresh=True)
 
 Build a lookup object from explicit file paths.
 
-`RotoLookup(prefixes_file, ris_files, timestamps_dir=None)`
+`RotoLookup(ris_files, prefixes_file=None, timestamps_dir=None)`
 
 Parameters
-
-`prefixes_file`
-
-Path to the delegated allocations file, usually `delegated_all.csv`.
-
-Type: `str`
 
 `ris_files`
 
@@ -314,9 +321,15 @@ One or more RIS Whois CSV files, typically one or both of:
 
 Type: `list[str]`
 
+`prefixes_file`
+
+Optional path to delegated allocation data, usually `delegated_all.csv`.
+
+Type: `str | None`
+
 `timestamps_dir`
 
-Directory containing optional timestamp metadata files. Defaults to the parent directory of `prefixes_file`.
+Directory containing optional timestamp metadata files. Defaults to the parent directory of `prefixes_file` when provided, otherwise the first RIS file's parent directory.
 
 Type: `str | None`
 Default: `None`
@@ -341,8 +354,8 @@ Example
 from roto_api import RotoLookup
 
 lookup = RotoLookup(
-    prefixes_file="./data/delegated_all.csv",
     ris_files=["./data/pfx_asn_dfz_v4.csv", "./data/pfx_asn_dfz_v6.csv"],
+    prefixes_file="./data/delegated_all.csv",
     timestamps_dir="./data",
 )
 ```
@@ -351,21 +364,29 @@ lookup = RotoLookup(
 
 Build a lookup object from a prepared data directory.
 
-`RotoLookup.from_data_dir(data_dir)`
+`RotoLookup.from_data_dir(data_dir, include_delegated=False)`
 
 Parameters
 
 `data_dir`
 
 Directory containing:
-- `delegated_all.csv`
 - at least one of `pfx_asn_dfz_v4.csv` or `pfx_asn_dfz_v6.csv`
 
 May also contain:
+- `delegated_all.csv`
 - `del_ext.timestamps.json`
 - `riswhois.timestamps.json`
 
 Type: `str`
+
+`include_delegated`
+
+Whether to load `delegated_all.csv` and `del_ext.timestamps.json` from `data_dir`.
+
+Type: `bool`
+
+Default: `False`
 
 Return value
 
@@ -387,13 +408,18 @@ Example
 from roto_api import RotoLookup
 
 lookup = RotoLookup.from_data_dir("./data")
+lookup_with_delegated = RotoLookup.from_data_dir(
+    "./data", include_delegated=True
+)
 ```
 
 ### RotoLookup.lookup_ip
 
 Run a single-IP longest-prefix lookup.
 
-`lookup_ip(ip)`
+`lookup_ip(ip, min_peer_count=10, mode="overview")`
+
+For exact route/origin validation use `mode="validation"` and `min_peer_count=0` so low-visibility RIS routes are not hidden.
 
 Parameters
 
@@ -408,7 +434,12 @@ Return value
 A dictionary with:
 - `ip`
 - `prefix`
+- `matched_prefix`
 - `origin_asns`
+- `origin_peer_counts`
+- `peer_count`
+- `is_less_specific`
+- `mode`
 - `match_type`
 
 Exceptions
@@ -423,13 +454,20 @@ Example
 result = lookup.lookup_ip("8.8.8.8")
 print(result["prefix"])
 print(result["origin_asns"])
+
+overview = lookup.lookup_ip(
+    "151.101.2.133",
+    min_peer_count=10,
+    mode="overview",
+)
+print(overview["prefix"], overview["matched_prefix"], overview["is_less_specific"])
 ```
 
 ### RotoLookup.lookup_ips
 
 Run longest-prefix lookup for multiple IPs in one Rust call.
 
-`lookup_ips(ips)`
+`lookup_ips(ips, min_peer_count=10, mode="overview")`
 
 Parameters
 
@@ -518,6 +556,8 @@ This repo is currently set up to publish wheels for:
 
 - Linux x86_64
 - Windows x86_64
+- macOS x86_64
+- macOS arm64
 
 An sdist can also be published so unsupported platforms may build locally if they have a suitable Rust toolchain.
 

@@ -1,23 +1,14 @@
-include!(concat!(env!("OUT_DIR"), "/version.rs"));
-
-use ansi_term::Colour;
-use chrono::{DateTime, Utc};
-use num::PrimInt;
 use rotonda_store::common::{
     AddressFamily, MergeUpdate, Prefix as RotondaPrefix,
 };
-pub use rotonda_store::{
-    InMemNodeId, InMemStorage, MatchOptions, MatchType, SizedStrideNode,
-    TreeBitMap,
-};
+pub use rotonda_store::{InMemStorage, MatchOptions, MatchType, TreeBitMap};
 use std::error::Error;
-use std::fmt::Write;
 use std::fs::File;
 use std::io::{self, ErrorKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::str::FromStr;
-use std::{fmt, slice};
+use std::fmt;
 
 //------------ Addr ----------------------------------------------------------
 
@@ -49,7 +40,7 @@ impl From<IpAddr> for Addr {
 }
 impl From<u32> for Addr {
     fn from(addr: u32) -> Self {
-        addr.into()
+        Self::V4(addr)
     }
 }
 
@@ -187,57 +178,41 @@ impl<'a>
     ) -> QueryResult<'a> {
         match result.prefix {
             Some(prefix) => match prefix.net.into_ipaddr() {
-                std::net::IpAddr::V4(net) => {
-                    return QueryResult {
-                        match_type: result.match_type,
-                        prefix: result.prefix.map(|pfx| Prefix {
-                            addr: Addr::from(net),
-                            len: pfx.len,
-                        }),
-                        prefix_meta: if let Some(pfx) = result.prefix {
-                            pfx.meta.as_ref()
-                        } else {
-                            None
-                        },
-                        less_specifics: RecordSet::from(
-                            result.less_specifics.unwrap(),
-                        ),
-                        more_specifics: RecordSet::from(
-                            result.more_specifics.unwrap(),
-                        ),
-                    }
-                }
-                std::net::IpAddr::V6(net) => {
-                    return QueryResult {
-                        match_type: result.match_type,
-                        prefix: result.prefix.map(|pfx| Prefix {
-                            addr: Addr::from(net),
-                            len: pfx.len,
-                        }),
-                        prefix_meta: if let Some(pfx) = result.prefix {
-                            pfx.meta.as_ref()
-                        } else {
-                            None
-                        },
-                        less_specifics: RecordSet::from(
-                            result.less_specifics.unwrap(),
-                        ),
-                        more_specifics: RecordSet::from(
-                            result.more_specifics.unwrap(),
-                        ),
-                    }
-                }
+                std::net::IpAddr::V4(net) => QueryResult {
+                    match_type: result.match_type,
+                    prefix: result.prefix.map(|pfx| Prefix {
+                        addr: Addr::from(net),
+                        len: pfx.len,
+                    }),
+                    prefix_meta: if let Some(pfx) = result.prefix {
+                        pfx.meta.as_ref()
+                    } else {
+                        None
+                    },
+                    less_specifics: RecordSet::from(result.less_specifics),
+                    more_specifics: RecordSet::from(result.more_specifics),
+                },
+                std::net::IpAddr::V6(net) => QueryResult {
+                    match_type: result.match_type,
+                    prefix: result.prefix.map(|pfx| Prefix {
+                        addr: Addr::from(net),
+                        len: pfx.len,
+                    }),
+                    prefix_meta: if let Some(pfx) = result.prefix {
+                        pfx.meta.as_ref()
+                    } else {
+                        None
+                    },
+                    less_specifics: RecordSet::from(result.less_specifics),
+                    more_specifics: RecordSet::from(result.more_specifics),
+                },
             },
             None => QueryResult {
                 match_type: MatchType::EmptyMatch,
                 prefix: None,
                 prefix_meta: None,
-                less_specifics: RecordSet::from(
-                    result.less_specifics.unwrap(),
-                ),
-                more_specifics: RecordSet::from(
-                    result.more_specifics.unwrap(),
-                ),
+                less_specifics: RecordSet::from(result.less_specifics),
+                more_specifics: RecordSet::from(result.more_specifics),
             },
         }
     }
@@ -255,57 +230,41 @@ impl<'a>
     ) -> QueryResult<'a> {
         match result.prefix {
             Some(prefix) => match prefix.net.into_ipaddr() {
-                std::net::IpAddr::V4(net) => {
-                    return QueryResult {
-                        match_type: result.match_type,
-                        prefix: result.prefix.map(|pfx| Prefix {
-                            addr: Addr::from(net),
-                            len: pfx.len,
-                        }),
-                        prefix_meta: if let Some(pfx) = result.prefix {
-                            pfx.meta.as_ref()
-                        } else {
-                            None
-                        },
-                        less_specifics: RecordSet::from(
-                            result.less_specifics.unwrap(),
-                        ),
-                        more_specifics: RecordSet::from(
-                            result.more_specifics.unwrap(),
-                        ),
-                    }
-                }
-                std::net::IpAddr::V6(net) => {
-                    return QueryResult {
-                        match_type: result.match_type,
-                        prefix: result.prefix.map(|pfx| Prefix {
-                            addr: Addr::from(net),
-                            len: pfx.len,
-                        }),
-                        prefix_meta: if let Some(pfx) = result.prefix {
-                            pfx.meta.as_ref()
-                        } else {
-                            None
-                        },
-                        less_specifics: RecordSet::from(
-                            result.less_specifics.unwrap(),
-                        ),
-                        more_specifics: RecordSet::from(
-                            result.more_specifics.unwrap(),
-                        ),
-                    }
-                }
+                std::net::IpAddr::V4(net) => QueryResult {
+                    match_type: result.match_type,
+                    prefix: result.prefix.map(|pfx| Prefix {
+                        addr: Addr::from(net),
+                        len: pfx.len,
+                    }),
+                    prefix_meta: if let Some(pfx) = result.prefix {
+                        pfx.meta.as_ref()
+                    } else {
+                        None
+                    },
+                    less_specifics: RecordSet::from(result.less_specifics),
+                    more_specifics: RecordSet::from(result.more_specifics),
+                },
+                std::net::IpAddr::V6(net) => QueryResult {
+                    match_type: result.match_type,
+                    prefix: result.prefix.map(|pfx| Prefix {
+                        addr: Addr::from(net),
+                        len: pfx.len,
+                    }),
+                    prefix_meta: if let Some(pfx) = result.prefix {
+                        pfx.meta.as_ref()
+                    } else {
+                        None
+                    },
+                    less_specifics: RecordSet::from(result.less_specifics),
+                    more_specifics: RecordSet::from(result.more_specifics),
+                },
             },
             None => QueryResult {
                 match_type: MatchType::EmptyMatch,
                 prefix: None,
                 prefix_meta: None,
-                less_specifics: RecordSet::from(
-                    result.less_specifics.unwrap(),
-                ),
-                more_specifics: RecordSet::from(
-                    result.more_specifics.unwrap(),
-                ),
+                less_specifics: RecordSet::from(result.less_specifics),
+                more_specifics: RecordSet::from(result.more_specifics),
             },
         }
     }
@@ -318,7 +277,7 @@ impl<'a> From<Option<Vec<&'a RotondaPrefix<u32, ExtPrefixRecord>>>>
         result: Option<Vec<&'a RotondaPrefix<u32, ExtPrefixRecord>>>,
     ) -> Self {
         RecordSet {
-            v4: result.unwrap(),
+            v4: result.unwrap_or_default(),
             v6: Vec::new(),
         }
     }
@@ -331,31 +290,10 @@ impl<'a> From<Option<Vec<&'a RotondaPrefix<u128, ExtPrefixRecord>>>>
         result: Option<Vec<&'a RotondaPrefix<u128, ExtPrefixRecord>>>,
     ) -> Self {
         RecordSet {
-            v6: result.unwrap(),
+            v6: result.unwrap_or_default(),
             v4: Vec::new(),
         }
     }
-}
-
-// -------------- AsnQueryResult ---------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct AsnQueryResult<'a> {
-    pub prefixes: RecordSet<'a>,
-}
-
-pub enum SearchType {
-    PrefixesByBgpAsn,
-}
-
-impl fmt::Display for SearchType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "by-asns")
-    }
-}
-
-pub struct SearchByAsnOptions {
-    pub search_type: SearchType,
 }
 
 //------------ RecordSet -----------------------------------------------------
@@ -369,84 +307,6 @@ pub struct RecordSet<'a> {
 impl<'a> RecordSet<'a> {
     pub fn is_empty(&self) -> bool {
         self.v4.is_empty() && self.v6.is_empty()
-    }
-
-    pub fn iter(&self) -> RecordSetIter<'_, '_> {
-        RecordSetIter {
-            v4: if self.v4.is_empty() {
-                None
-            } else {
-                Some(self.v4.iter())
-            },
-            v6: self.v6.iter(),
-        }
-    }
-
-    pub fn reverse(mut self) -> RecordSet<'a> {
-        self.v4.reverse();
-        self.v6.reverse();
-        self
-    }
-}
-
-impl<'a> From<Vec<&'a RotondaPrefix<u32, ExtPrefixRecord>>>
-    for RecordSet<'a>
-{
-    fn from(vec: Vec<&'a RotondaPrefix<u32, ExtPrefixRecord>>) -> Self {
-        Self {
-            v4: vec,
-            v6: vec![],
-        }
-    }
-}
-
-impl<'a> From<Vec<&'a RotondaPrefix<u128, ExtPrefixRecord>>>
-    for RecordSet<'a>
-{
-    fn from(vec: Vec<&'a RotondaPrefix<u128, ExtPrefixRecord>>) -> Self {
-        Self {
-            v4: vec![],
-            v6: vec,
-        }
-    }
-}
-
-//------------ RecordSetIter -------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct RecordSetIter<'a, 'b> {
-    v4: Option<slice::Iter<'a, &'b RotondaPrefix<u32, ExtPrefixRecord>>>,
-    v6: slice::Iter<'a, &'b RotondaPrefix<u128, ExtPrefixRecord>>,
-}
-
-impl<'a, 'b> Iterator for RecordSetIter<'a, 'b> {
-    type Item = (Prefix, Option<&'b ExtPrefixRecord>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // V4 is already done.
-        if self.v4.is_none() {
-            return self.v6.next().map(|res| {
-                (
-                    Prefix {
-                        addr: Addr::V6(res.net),
-                        len: res.len,
-                    },
-                    res.meta.as_ref(),
-                )
-            });
-        }
-
-        if let Some(res) = self.v4.as_mut().and_then(|v4| v4.next()) {
-            return Some((
-                Prefix {
-                    addr: Addr::V4(res.net),
-                    len: res.len,
-                },
-                res.meta.as_ref(),
-            ));
-        }
-        self.v4 = None;
-        self.next()
     }
 }
 
@@ -462,7 +322,7 @@ pub enum Rir {
     Unknown,
 }
 
-impl<'a> From<&'a str> for Rir {
+impl From<&str> for Rir {
     fn from(str: &str) -> Self {
         match str {
             "afrinic" => Self::Afrinic,
@@ -488,7 +348,7 @@ impl Rir {
     }
 }
 
-impl<'a> fmt::Display for Rir {
+impl fmt::Display for Rir {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Rir::Afrinic => write!(f, "AFRINIC"),
@@ -522,10 +382,7 @@ impl MergeUpdate for ExtPrefixRecord {
             match &mut self.1 {
                 Some(ris_whois_rec) => {
                     if let Some(update_ris_rec) = update_record.1 {
-                        ris_whois_rec
-                            .origin_asns
-                            .0
-                            .push(update_ris_rec.origin_asns.0[0]);
+                        ris_whois_rec.origins.extend(update_ris_rec.origins);
                     }
                 }
                 None => {
@@ -540,29 +397,18 @@ impl MergeUpdate for ExtPrefixRecord {
 
 #[derive(Clone, Debug)]
 pub struct RirDelExtRecord {
-    group_id: String,
     pub rir: Rir,
 }
 
-// Not really used right now, since the
-// impl Display isn't used either. May make sense
-// to redefine Asn to be an enum that can either
-// be a u32 or a PRIVATE_ASN.
-#[derive(Clone, Debug)]
-pub struct AsnArray(pub Vec<Asn>);
-
-impl fmt::Display for AsnArray {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let arr_str = self.0.iter().fold("".to_string(), |as_arr, asn| {
-            let asn_str: &str = &asn.to_string();
-            as_arr + "AS" + asn_str
-        });
-        write!(f, "{}", arr_str)
-    }
-}
 #[derive(Clone, Debug)]
 pub struct RisWhoisRecord {
-    pub origin_asns: AsnArray,
+    pub origins: Vec<RisOrigin>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RisOrigin {
+    pub asn: Asn,
+    pub peer_count: Option<u32>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -644,33 +490,6 @@ impl TimeStamps {
         Ok(())
     }
 
-    pub fn to_json_builder(self, builder: &mut JsonBuilder) {
-        builder.member_array("sources", |builder| {
-            for rir in [
-                self.afrinic,
-                self.apnic,
-                self.arin,
-                self.lacnic,
-                self.ripencc,
-                self.riswhois,
-            ]
-            .iter()
-            .flatten()
-            {
-                builder.array_object(|builder| {
-                    // RisWhois dataset has Rir::Unknown set
-                    if let Rir::Unknown = rir.0 {
-                        builder.member_str("type", "bgp");
-                    } else {
-                        builder.member_str("type", "rir-alloc");
-                    }
-                    builder.member_str("id", rir.0.to_json_id());
-                    builder.member_raw("serial", rir.1);
-                    builder.member_str("lastUpdated", rir.2.format("%+"));
-                })
-            }
-        });
-    }
 }
 
 //------------ Store ---------------------------------------------------------
@@ -678,8 +497,6 @@ impl TimeStamps {
 pub struct Store {
     v4: TreeBitMap<InMemStorage<u32, ExtPrefixRecord>>,
     v6: TreeBitMap<InMemStorage<u128, ExtPrefixRecord>>,
-    updated: DateTime<Utc>,
-    pub timestamps: TimeStamps,
 }
 
 impl Default for Store {
@@ -687,17 +504,11 @@ impl Default for Store {
         Self {
             v4: TreeBitMap::new(vec![4]),
             v6: TreeBitMap::new(vec![4]),
-            updated: Utc::now(),
-            timestamps: Default::default(),
         }
     }
 }
 
 impl Store {
-    pub fn updated(&self) -> DateTime<Utc> {
-        self.updated
-    }
-
     pub fn load_riswhois(
         &mut self,
         path: &Path,
@@ -715,6 +526,21 @@ impl Store {
                 record_field(&record, 1, path, record_index, "RIS Whois")?;
             let asn_str =
                 record_field(&record, 2, path, record_index, "RIS Whois")?;
+            let peer_count = record
+                .get(3)
+                .filter(|value| !value.is_empty())
+                .map(|value| {
+                    value.parse::<u32>().map_err(|err| {
+                        invalid_data_error(format!(
+                            "invalid RIS peer count '{}' in record {} from '{}': {}",
+                            value,
+                            record_index,
+                            path.display(),
+                            err
+                        ))
+                    })
+                })
+                .transpose()?;
 
             let net = Addr::from_str(addr_str).map_err(|err| {
                 invalid_data_error(format!(
@@ -767,7 +593,7 @@ impl Store {
             let meta = ExtPrefixRecord(
                 None,
                 Some(RisWhoisRecord {
-                    origin_asns: AsnArray(vec![asn]),
+                    origins: vec![RisOrigin { asn, peer_count }],
                 }),
             );
 
@@ -800,7 +626,6 @@ impl Store {
                 }
             }
         }
-        self.updated = Utc::now();
         Ok(())
     }
 
@@ -843,15 +668,12 @@ impl Store {
                 continue;
             }
 
-            let group_id = match record.get(7) {
-                Some(id) if !id.is_empty() => id.to_string(),
-                None => continue,
-                Some(_) => continue,
-            };
+            if !matches!(record.get(7), Some(id) if !id.is_empty()) {
+                continue;
+            }
 
             let meta = ExtPrefixRecord(
                 Some(RirDelExtRecord {
-                    group_id,
                     rir: rir.into(),
                 }),
                 None,
@@ -961,7 +783,6 @@ impl Store {
                 _ => {}
             }
         }
-        self.updated = Utc::now();
         Ok(())
     }
 
@@ -988,421 +809,6 @@ impl Store {
         }
     }
 
-    pub fn get_related_prefixes(
-        &self,
-        meta: &RirDelExtRecord,
-    ) -> RecordSet<'_> {
-        RecordSet {
-            v4: Self::_get_related_prefixes(&self.v4, meta),
-            v6: Self::_get_related_prefixes(&self.v6, meta),
-        }
-    }
-
-    fn _get_related_prefixes<'b, T: AddressFamily>(
-        tree: &'b TreeBitMap<InMemStorage<T, ExtPrefixRecord>>,
-        meta: &RirDelExtRecord,
-    ) -> Vec<&'b RotondaPrefix<T, ExtPrefixRecord>> {
-        tree.store
-            .prefixes
-            .iter()
-            .filter(|&rel_p| {
-                if let Some(rel_p_meta) = rel_p.meta.as_ref() {
-                    if let Some(rel_p_meta_rde) = rel_p_meta.0.as_ref() {
-                        rel_p_meta_rde.group_id == meta.group_id
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            })
-            .collect()
-    }
-
-    pub fn get_prefixes_for_bgp_asn(
-        &self,
-        asns: &[Asn],
-        _search_options: &SearchByAsnOptions,
-    ) -> AsnQueryResult<'_> {
-        let prefixes_v4 = self
-            .v4
-            .store
-            .prefixes
-            .as_slice()
-            .iter()
-            .filter(|p| {
-                if let Some(meta) = p.meta.as_ref() {
-                    if let Some(asn_rec) = meta.1.as_ref() {
-                        // search the vector of | search_asn X origin_asn |
-                        asns.iter().any(|a1| {
-                            asn_rec
-                                .origin_asns
-                                .0
-                                .iter()
-                                .any(|a2| a2.0 == a1.0)
-                        })
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            })
-            .collect::<Vec<&RotondaPrefix<_, _>>>();
-
-        let prefixes_v6 = self
-            .v6
-            .store
-            .prefixes
-            .as_slice()
-            .iter()
-            .filter(|p| {
-                if let Some(meta) = p.meta.as_ref() {
-                    if let Some(asn_rec) = meta.1.as_ref() {
-                        // search the vector of | search_asn X origin_asn |
-                        asns.iter().any(|a1| {
-                            asn_rec
-                                .origin_asns
-                                .0
-                                .iter()
-                                .any(|a2| a2.0 == a1.0)
-                        })
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            })
-            .collect::<Vec<&RotondaPrefix<_, _>>>();
-
-        AsnQueryResult {
-            // asns,
-            prefixes: RecordSet {
-                v4: prefixes_v4,
-                v6: prefixes_v6,
-            },
-        }
-    }
-
-    pub fn output_stats(&self) {
-        println!("IPv4\n----");
-        Self::output_tree_stats(&self.v4);
-        println!("\nIPv6\n----");
-        Self::output_tree_stats(&self.v6);
-    }
-
-    fn output_tree_stats<AF: AddressFamily + PrimInt + fmt::Debug>(
-        tree_bitmap: &TreeBitMap<InMemStorage<AF, ExtPrefixRecord>>,
-    ) {
-        let total_nodes = tree_bitmap.stats.iter().fold(0, |mut acc, c| {
-            acc += c.created_nodes.iter().fold(0, |mut sum, l| {
-                sum += l.count;
-                sum
-            });
-            acc
-        });
-        println!("prefix vec size {}", tree_bitmap.store.prefixes.len());
-        println!("finished building tree...");
-        println!("{:?} nodes created", total_nodes);
-        println!(
-            "size of node: {} bytes",
-            std::mem::size_of::<SizedStrideNode<AF, InMemNodeId>>()
-        );
-        println!(
-            "memory used by nodes: {}kb",
-            total_nodes
-                * std::mem::size_of::<SizedStrideNode<AF, InMemNodeId>>()
-                / 1024
-        );
-        println!(
-            "size of prefix: {} bytes",
-            std::mem::size_of::<RotondaPrefix<AF, ExtPrefixRecord>>()
-        );
-        println!(
-            "memory used by prefixes: {}kb",
-            tree_bitmap.store.prefixes.len()
-                * std::mem::size_of::<RotondaPrefix<AF, ExtPrefixRecord>>()
-                / 1024
-        );
-        println!("stride division  {:?}", tree_bitmap.strides);
-
-        for s in &tree_bitmap.stats {
-            println!("{:?}", s);
-        }
-
-        println!(
-            "level\t[{}|{}] nodes occupied/max nodes percentage_max_nodes_occupied prefixes",
-            Colour::Blue.paint("nodes"),
-            Colour::Green.paint("prefixes")
-        );
-        let bars = ["▏", "▎", "▍", "▌", "▋", "▊", "▉"];
-        let mut stride_bits = [0, 0];
-        const SCALE: u32 = 5500;
-
-        for stride in tree_bitmap.strides.iter().enumerate() {
-            // let level = stride.0;
-            stride_bits = [stride_bits[1] + 1, stride_bits[1] + stride.1];
-            let nodes_num = tree_bitmap
-                .stats
-                .iter()
-                .find(|s| s.stride_len == *stride.1)
-                .unwrap()
-                .created_nodes[stride.0]
-                .count as u32;
-
-            if nodes_num > 0 {
-                let prefixes_num = tree_bitmap
-                    .stats
-                    .iter()
-                    .find(|s| s.stride_len == *stride.1)
-                    .unwrap()
-                    .prefixes_num[stride.0]
-                    .count as u32;
-
-                let n = (nodes_num / SCALE) as usize;
-                let max_pfx: u128 = u128::pow(2, stride_bits[1] as u32);
-
-                print!("{}-{}\t", stride_bits[0], stride_bits[1]);
-
-                for _ in 0..n {
-                    print!("{}", Colour::Blue.paint("█"));
-                }
-
-                print!(
-                    "{}",
-                    Colour::Blue.paint(
-                        bars[((nodes_num % SCALE) / (SCALE / 7)) as usize]
-                    ) //  = scale / 7
-                );
-
-                print!(
-                    " {}/{} {:.2}%",
-                    nodes_num,
-                    max_pfx,
-                    (nodes_num as f64 / max_pfx as f64) * 100.0
-                );
-                print!("\n\t");
-
-                let n = (prefixes_num / SCALE) as usize;
-                for _ in 0..n {
-                    print!("{}", Colour::Green.paint("█"));
-                }
-
-                print!(
-                    "{}",
-                    Colour::Green.paint(
-                        bars[((nodes_num % SCALE) / (SCALE / 7)) as usize]
-                    ) //  = scale / 7
-                );
-
-                println!(" {}", prefixes_num);
-            }
-        }
-    }
-}
-
-//------------ JsonBuilder ---------------------------------------------------
-
-/// A helper type for building a JSON-encoded string on the fly.
-///
-/// Note that the builder only supports strings without control characters.
-pub struct JsonBuilder<'a> {
-    target: &'a mut String,
-    indent: usize,
-    empty: bool,
-}
-
-impl JsonBuilder<'static> {
-    pub fn build<F: FnOnce(&mut JsonBuilder)>(op: F) -> String {
-        let mut target = String::new();
-        JsonBuilder {
-            target: &mut target,
-            indent: 0,
-            empty: true,
-        }
-        .array_object(op);
-        target
-    }
-}
-
-impl<'a> JsonBuilder<'a> {
-    pub fn member_object<F: FnOnce(&mut JsonBuilder)>(
-        &mut self,
-        key: impl fmt::Display,
-        op: F,
-    ) {
-        self.append_key(key);
-        self.target.push_str("{\n");
-        op(&mut JsonBuilder {
-            target: self.target,
-            indent: self.indent + 1,
-            empty: true,
-        });
-        self.target.push('\n');
-        self.append_indent();
-        self.target.push('}');
-    }
-
-    pub fn member_array<F: FnOnce(&mut JsonBuilder)>(
-        &mut self,
-        key: impl fmt::Display,
-        op: F,
-    ) {
-        self.append_key(key);
-        self.target.push_str("[\n");
-        op(&mut JsonBuilder {
-            target: self.target,
-            indent: self.indent + 1,
-            empty: true,
-        });
-        self.target.push('\n');
-        self.append_indent();
-        self.target.push(']');
-    }
-
-    pub fn member_str(
-        &mut self,
-        key: impl fmt::Display,
-        value: impl fmt::Display,
-    ) {
-        self.append_key(key);
-        self.target.push('"');
-        write!(
-            JsonString {
-                target: self.target
-            },
-            "{}",
-            value
-        )
-        .unwrap();
-        self.target.push('"');
-    }
-
-    pub fn member_raw(
-        &mut self,
-        key: impl fmt::Display,
-        value: impl fmt::Display,
-    ) {
-        self.append_key(key);
-        write!(
-            JsonString {
-                target: self.target
-            },
-            "{}",
-            value
-        )
-        .unwrap();
-    }
-
-    pub fn array_object<F: FnOnce(&mut JsonBuilder)>(&mut self, op: F) {
-        self.append_array_head();
-        self.append_indent();
-        self.target.push_str("{\n");
-        op(&mut JsonBuilder {
-            target: self.target,
-            indent: self.indent + 1,
-            empty: true,
-        });
-        self.target.push('\n');
-        self.append_indent();
-        self.target.push('}');
-    }
-
-    pub fn array_array<F: FnOnce(&mut JsonBuilder)>(&mut self, op: F) {
-        self.append_array_head();
-        self.append_indent();
-        self.target.push_str("[\n");
-        op(&mut JsonBuilder {
-            target: self.target,
-            indent: self.indent + 1,
-            empty: true,
-        });
-        self.target.push('\n');
-        self.append_indent();
-        self.target.push(']');
-    }
-
-    pub fn array_str(&mut self, value: impl fmt::Display) {
-        self.append_array_head();
-        self.append_indent();
-        self.target.push('"');
-        write!(
-            JsonString {
-                target: self.target
-            },
-            "{}",
-            value
-        )
-        .unwrap();
-        self.target.push('"');
-    }
-
-    pub fn array_raw(&mut self, value: impl fmt::Display) {
-        self.append_array_head();
-        self.append_indent();
-        write!(
-            JsonString {
-                target: self.target
-            },
-            "{}",
-            value
-        )
-        .unwrap();
-    }
-
-    fn append_key(&mut self, key: impl fmt::Display) {
-        if self.empty {
-            self.empty = false
-        } else {
-            self.target.push_str(",\n");
-        }
-        self.append_indent();
-        self.target.push('"');
-        write!(
-            JsonString {
-                target: self.target
-            },
-            "{}",
-            key
-        )
-        .unwrap();
-        self.target.push('"');
-        self.target.push_str(": ");
-    }
-
-    fn append_array_head(&mut self) {
-        if self.empty {
-            self.empty = false
-        } else {
-            self.target.push_str(",\n");
-        }
-    }
-
-    fn append_indent(&mut self) {
-        for _ in 0..self.indent {
-            self.target.push_str("   ");
-        }
-    }
-}
-
-//------------ JsonString ----------------------------------------------------
-
-struct JsonString<'a> {
-    target: &'a mut String,
-}
-
-impl<'a> fmt::Write for JsonString<'a> {
-    fn write_str(&mut self, mut s: &str) -> Result<(), fmt::Error> {
-        while let Some(idx) = s.find(|ch| ch == '"' || ch == '\\') {
-            self.target.push_str(&s[..idx]);
-            self.target.push('\\');
-            self.target.push(char::from(s.as_bytes()[idx]));
-            s = &s[idx + 1..];
-        }
-        self.target.push_str(s);
-        Ok(())
-    }
 }
 
 mod python;
@@ -1476,20 +882,53 @@ mod tests {
             .and_then(|meta| meta.1.as_ref())
             .map(|record| {
                 record
-                    .origin_asns
-                    .0
+                    .origins
                     .iter()
-                    .map(|asn| asn.to_string())
+                    .map(|origin| origin.asn.to_string())
                     .collect()
             })
             .unwrap_or_default()
     }
 
     #[test]
+    fn exact_match_without_specific_sets_does_not_panic() {
+        let tmp = TestDir::new("exact-no-specifics");
+        let csv_path = tmp.write("ris.csv", "8.8.8.0,24,15169,376\n");
+        let mut store = Store::default();
+        store.load_riswhois(&csv_path).unwrap();
+
+        let result = store.match_longest_prefix::<u32>(
+            Prefix::new(Addr::from_str("8.8.8.0").unwrap(), 24),
+            &MatchOptions {
+                match_type: MatchType::ExactMatch,
+                include_less_specifics: false,
+                include_more_specifics: false,
+            },
+        );
+
+        assert_eq!(result.prefix.unwrap().to_string(), "8.8.8.0/24");
+        assert!(result.less_specifics.is_empty());
+        assert!(result.more_specifics.is_empty());
+    }
+
+    fn max_peer_count(query: &QueryResult<'_>) -> Option<u32> {
+        query
+            .prefix_meta
+            .and_then(|meta| meta.1.as_ref())
+            .and_then(|record| {
+                record
+                    .origins
+                    .iter()
+                    .filter_map(|origin| origin.peer_count)
+                    .max()
+            })
+    }
+
+    #[test]
     fn load_riswhois_keeps_first_headerless_row() {
         let tmp = TestDir::new("ris-headerless");
         let csv_path =
-            tmp.write("ris.csv", "8.8.8.0,24,15169\n1.1.1.0,24,13335\n");
+            tmp.write("ris.csv", "8.8.8.0,24,15169,376\n1.1.1.0,24,13335,211\n");
         let mut store = Store::default();
 
         store.load_riswhois(&csv_path).unwrap();
@@ -1499,7 +938,21 @@ mod tests {
             "8.8.8.0/24"
         );
         assert_eq!(origin_asns(&lookup(&store, "8.8.8.8")), vec!["AS15169"]);
+        assert_eq!(max_peer_count(&lookup(&store, "8.8.8.8")), Some(376));
         assert_eq!(origin_asns(&lookup(&store, "1.1.1.1")), vec!["AS13335"]);
+        assert_eq!(max_peer_count(&lookup(&store, "1.1.1.1")), Some(211));
+    }
+
+    #[test]
+    fn load_riswhois_accepts_legacy_three_column_rows() {
+        let tmp = TestDir::new("ris-legacy");
+        let csv_path = tmp.write("ris.csv", "8.8.8.0,24,15169\n");
+        let mut store = Store::default();
+
+        store.load_riswhois(&csv_path).unwrap();
+
+        assert_eq!(origin_asns(&lookup(&store, "8.8.8.8")), vec!["AS15169"]);
+        assert_eq!(max_peer_count(&lookup(&store, "8.8.8.8")), None);
     }
 
     #[test]

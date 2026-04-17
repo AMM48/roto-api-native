@@ -11,12 +11,10 @@ from __future__ import annotations
 import email.utils
 import gzip
 import os
-from pathlib import Path
-from typing import Dict, Mapping
-from typing import Optional
-from typing import Tuple
+import tempfile
 import urllib.request
-
+from pathlib import Path
+from typing import Dict, Mapping, Optional, Tuple
 
 DEFAULT_DEL_EXT_SOURCES = {
     "afrinic": "https://ftp.afrinic.net/pub/stats/afrinic/delegated-afrinic-extended-latest",
@@ -53,10 +51,21 @@ def http_date_from_mtime(path: Path) -> str:
     return email.utils.formatdate(timestamp, usegmt=True)
 
 
+def temp_output_path(destination: Path) -> Path:
+    """Return a unique temp file path in the destination directory."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(
+        prefix=f"{destination.name}.",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    os.close(fd)
+    return Path(path)
+
+
 def download_file(url: str, destination: Path) -> str:
     """Download a file atomically and return its Last-Modified value if present."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = destination.with_suffix(destination.suffix + ".tmp")
+    tmp_path = temp_output_path(destination)
     with urllib.request.urlopen(url, timeout=120) as response, open(
         tmp_path, "wb"
     ) as handle:
@@ -75,7 +84,7 @@ def write_del_ext_timestamps(
 ) -> None:
     """Write delegated RIR source metadata for ``source_status()``."""
     output_path = data_dir / "del_ext.timestamps.json"
-    tmp_path = output_path.with_suffix(".tmp")
+    tmp_path = temp_output_path(output_path)
     with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
         handle.write("rir,file_timestamp,last_modified_header\n")
         for rir in ["afrinic", "apnic", "arin", "lacnic", "ripencc"]:
@@ -91,7 +100,7 @@ def write_riswhois_timestamps(
 ) -> None:
     """Write RIS Whois source metadata for ``source_status()``."""
     output_path = data_dir / "riswhois.timestamps.json"
-    tmp_path = output_path.with_suffix(".tmp")
+    tmp_path = temp_output_path(output_path)
     with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
         handle.write("rir,file_timestamp,last_modified_header\n")
         handle.write(
@@ -126,7 +135,7 @@ def build_delegated_all(
     """Download delegated extended files and concatenate them into one snapshot."""
     metadata = {}
     combined_path = data_dir / "delegated_all.csv"
-    tmp_combined = combined_path.with_suffix(".tmp")
+    tmp_combined = temp_output_path(combined_path)
 
     for rir, url in sources.items():
         source_path = downloads_dir / f"delegated-{rir}-extended-latest.txt"
@@ -157,13 +166,17 @@ def _write_riswhois_csv_row(line: str, csv_handle) -> None:
     prefix, length = parts[1].split("/", 1)
     if not length.isdigit():
         return
+    peer_count = parts[2] if len(parts) > 2 else ""
+    if peer_count and peer_count.isdigit():
+        csv_handle.write(f"{prefix},{length},{parts[0]},{peer_count}\n")
+        return
     csv_handle.write(f"{prefix},{length},{parts[0]}\n")
 
 
 def build_riswhois_csv(gzip_path: Path, raw_path: Path, csv_path: Path) -> None:
     """Expand a RIS gzip dump into raw text and the compact CSV consumed by Rust."""
-    tmp_raw = raw_path.with_suffix(".tmp")
-    tmp_csv = csv_path.with_suffix(".tmp")
+    tmp_raw = temp_output_path(raw_path)
+    tmp_csv = temp_output_path(csv_path)
 
     with gzip.open(
         gzip_path, "rt", encoding="utf-8", errors="replace"
@@ -182,7 +195,7 @@ def build_riswhois_csv(gzip_path: Path, raw_path: Path, csv_path: Path) -> None:
 
 def build_riswhois_csv_from_raw(raw_path: Path, csv_path: Path) -> None:
     """Rebuild the compact RIS CSV from a previously cached raw dump."""
-    tmp_csv = csv_path.with_suffix(".tmp")
+    tmp_csv = temp_output_path(csv_path)
     with open(
         raw_path, "r", encoding="utf-8", errors="replace", newline=""
     ) as raw_handle, open(tmp_csv, "w", encoding="utf-8", newline="") as csv_handle:
@@ -237,6 +250,7 @@ def build_riswhois(
 def ensure_data(
     data_dir,
     refresh: bool = False,
+    include_delegated: bool = False,
     del_ext_sources: Optional[Mapping[str, str]] = None,
     riswhois_sources: Optional[Mapping[str, str]] = None,
 ) -> Path:
@@ -249,6 +263,9 @@ def ensure_data(
     refresh:
         When true, re-download upstream data and rebuild the snapshot even if
         all expected files already exist.
+    include_delegated:
+        When true, also download and build delegated RIR allocation files.
+        The default RIS/BGP-only flow skips delegated data.
     del_ext_sources:
         Optional mapping of delegated-extended source URL overrides.
     riswhois_sources:
@@ -258,20 +275,22 @@ def ensure_data(
     data_dir = Path(data_dir)
     del_ext_dir = data_dir / "downloads" / "del_ext"
     ris_dir = data_dir / "downloads" / "riswhois"
-    ensure_dir(del_ext_dir)
     ensure_dir(ris_dir)
-    resolved_del_ext_sources = resolve_sources(
-        DEFAULT_DEL_EXT_SOURCES, del_ext_sources, "ROTO_API_DEL_EXT"
-    )
     resolved_riswhois_sources = resolve_sources(
         DEFAULT_RISWHOIS_SOURCES, riswhois_sources, "ROTO_API_RISWHOIS"
     )
-
-    del_ext_required = [data_dir / name for name in DEL_EXT_OUTPUTS]
     ris_required = [data_dir / name for name in RISWHOIS_OUTPUTS]
 
-    if refresh or any(not path.exists() for path in del_ext_required):
-        build_delegated_all(data_dir, del_ext_dir, refresh, resolved_del_ext_sources)
+    if include_delegated:
+        ensure_dir(del_ext_dir)
+        resolved_del_ext_sources = resolve_sources(
+            DEFAULT_DEL_EXT_SOURCES, del_ext_sources, "ROTO_API_DEL_EXT"
+        )
+        del_ext_required = [data_dir / name for name in DEL_EXT_OUTPUTS]
+        if refresh or any(not path.exists() for path in del_ext_required):
+            build_delegated_all(
+                data_dir, del_ext_dir, refresh, resolved_del_ext_sources
+            )
     if refresh or any(not path.exists() for path in ris_required):
         build_riswhois(data_dir, ris_dir, refresh, resolved_riswhois_sources)
 

@@ -1,6 +1,6 @@
-from pathlib import Path
 import shutil
 import uuid
+from pathlib import Path
 
 from roto_api import data as data_module
 
@@ -9,10 +9,8 @@ WORK_ROOT = Path(__file__).resolve().parent / ".work"
 
 def touch_required_files(base: Path) -> None:
     required = [
-        "delegated_all.csv",
         "pfx_asn_dfz_v4.csv",
         "pfx_asn_dfz_v6.csv",
-        "del_ext.timestamps.json",
         "riswhois.timestamps.json",
     ]
     for name in required:
@@ -23,6 +21,23 @@ def make_work_dir() -> Path:
     path = WORK_ROOT / uuid.uuid4().hex
     path.mkdir(parents=True, exist_ok=False)
     return path
+
+
+def test_temp_output_path_is_unique():
+    tmp_path = make_work_dir()
+    try:
+        target = tmp_path / "snapshot.csv"
+
+        first = data_module.temp_output_path(target)
+        second = data_module.temp_output_path(target)
+
+        assert first != second
+        assert first.parent == target.parent
+        assert second.parent == target.parent
+        assert first.exists()
+        assert second.exists()
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
 
 def test_resolve_sources_applies_overrides_and_env(monkeypatch):
@@ -46,7 +61,6 @@ def test_ensure_data_skips_rebuild_when_all_files_exist(monkeypatch):
         def fail(*args, **kwargs):
             raise AssertionError("bootstrap should not run when all files exist")
 
-        monkeypatch.setattr(data_module, "build_delegated_all", fail)
         monkeypatch.setattr(data_module, "build_riswhois", fail)
 
         result = data_module.ensure_data(tmp_path)
@@ -87,6 +101,7 @@ def test_ensure_data_refresh_uses_resolved_sources(monkeypatch):
         result = data_module.ensure_data(
             tmp_path,
             refresh=True,
+            include_delegated=True,
             del_ext_sources={"arin": "https://override.example/arin"},
         )
 
@@ -98,7 +113,7 @@ def test_ensure_data_refresh_uses_resolved_sources(monkeypatch):
         shutil.rmtree(tmp_path, ignore_errors=True)
 
 
-def test_ensure_data_only_rebuilds_missing_component(monkeypatch):
+def test_ensure_data_only_builds_ris_by_default(monkeypatch):
     captured = {"del_ext": 0, "ris": 0}
 
     def fake_del_ext(*args, **kwargs):
@@ -112,14 +127,28 @@ def test_ensure_data_only_rebuilds_missing_component(monkeypatch):
 
     tmp_path = make_work_dir()
     try:
-        (tmp_path / "delegated_all.csv").write_text("", encoding="utf-8")
-        (tmp_path / "del_ext.timestamps.json").write_text("", encoding="utf-8")
-
         result = data_module.ensure_data(tmp_path)
 
         assert result == tmp_path
         assert captured["del_ext"] == 0
         assert captured["ris"] == 1
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_ensure_data_can_skip_ris_when_present_even_without_delegated(monkeypatch):
+    tmp_path = make_work_dir()
+    try:
+        touch_required_files(tmp_path)
+
+        def fail(*args, **kwargs):
+            raise AssertionError("bootstrap should not run when RIS files exist")
+
+        monkeypatch.setattr(data_module, "build_riswhois", fail)
+
+        result = data_module.ensure_data(tmp_path)
+
+        assert result == tmp_path
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)
 
@@ -133,11 +162,11 @@ def test_build_riswhois_reuses_cached_raw_dump_when_csv_missing(monkeypatch):
         downloads_dir.mkdir()
 
         (downloads_dir / "riswhois4").write_text(
-            "15169\t8.8.8.0/24\n",
+            "15169\t8.8.8.0/24\t376\n",
             encoding="utf-8",
         )
         (downloads_dir / "riswhois6").write_text(
-            "13335\t2001:db8::/32\n",
+            "13335\t2001:db8::/32\t211\n",
             encoding="utf-8",
         )
 
@@ -153,8 +182,12 @@ def test_build_riswhois_reuses_cached_raw_dump_when_csv_missing(monkeypatch):
             sources=data_module.DEFAULT_RISWHOIS_SOURCES,
         )
 
-        assert (data_dir / "pfx_asn_dfz_v4.csv").read_text(encoding="utf-8") == "8.8.8.0,24,15169\n"
-        assert (data_dir / "pfx_asn_dfz_v6.csv").read_text(encoding="utf-8") == "2001:db8::,32,13335\n"
+        assert (
+            data_dir / "pfx_asn_dfz_v4.csv"
+        ).read_text(encoding="utf-8") == "8.8.8.0,24,15169,376\n"
+        assert (
+            data_dir / "pfx_asn_dfz_v6.csv"
+        ).read_text(encoding="utf-8") == "2001:db8::,32,13335,211\n"
         assert (data_dir / "riswhois.timestamps.json").exists()
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)

@@ -79,3 +79,13 @@ venv/
 /dist
 /target/wheels
 /*.whl
+/.ship-dist/
+/.ship-wheel-inspect/
+/.ship-site/
+/.tmp-ship/
+/.venv-ship/
+/.virtualenv-app-data/
+/.release-smoke-data/
+/roto-api-release-smoke-*/
+/scripts/generate_test_ips.py
+/scripts/test_ips_100000.csv

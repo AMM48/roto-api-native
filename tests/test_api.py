@@ -1,8 +1,8 @@
-import sys
-from types import SimpleNamespace
-from pathlib import Path
 import shutil
+import sys
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
 
 import roto_api
 
@@ -20,19 +20,22 @@ def test_open_lookup_bootstraps_then_loads_native(monkeypatch):
 
     class FakeLookup:
         @staticmethod
-        def from_data_dir(path):
+        def from_data_dir(path, include_delegated=False):
             captured["path"] = path
+            captured["include_delegated"] = include_delegated
             return {"loaded_from": path}
 
     def fake_ensure_data(
         data_dir,
         refresh=False,
+        include_delegated=False,
         del_ext_sources=None,
         riswhois_sources=None,
     ):
         captured["ensure_data_args"] = {
             "data_dir": data_dir,
             "refresh": refresh,
+            "include_delegated": include_delegated,
             "del_ext_sources": del_ext_sources,
             "riswhois_sources": riswhois_sources,
         }
@@ -51,9 +54,11 @@ def test_open_lookup_bootstraps_then_loads_native(monkeypatch):
 
         assert result == {"loaded_from": str(tmp_path)}
         assert captured["path"] == str(tmp_path)
+        assert captured["include_delegated"] is False
         assert captured["ensure_data_args"] == {
             "data_dir": tmp_path,
             "refresh": True,
+            "include_delegated": False,
             "del_ext_sources": None,
             "riswhois_sources": None,
         }
@@ -79,8 +84,9 @@ def test_load_lookup_uses_prepared_directory(monkeypatch):
 
     class FakeLookup:
         @staticmethod
-        def from_data_dir(path):
+        def from_data_dir(path, include_delegated=False):
             captured["path"] = path
+            captured["include_delegated"] = include_delegated
             return {"loaded_from": path}
 
     monkeypatch.setitem(
@@ -93,6 +99,30 @@ def test_load_lookup_uses_prepared_directory(monkeypatch):
 
     assert result == {"loaded_from": str(Path("prepared") / "snapshot")}
     assert captured["path"] == str(Path("prepared") / "snapshot")
+    assert captured["include_delegated"] is False
+
+
+def test_load_lookup_can_enable_delegated(monkeypatch):
+    captured = {}
+
+    class FakeLookup:
+        @staticmethod
+        def from_data_dir(path, include_delegated=False):
+            captured["path"] = path
+            captured["include_delegated"] = include_delegated
+            return {"loaded_from": path}
+
+    monkeypatch.setitem(
+        sys.modules,
+        "roto_api._native",
+        SimpleNamespace(RotoLookup=FakeLookup),
+    )
+
+    result = roto_api.load_lookup(Path("prepared") / "snapshot", include_delegated=True)
+
+    assert result == {"loaded_from": str(Path("prepared") / "snapshot")}
+    assert captured["path"] == str(Path("prepared") / "snapshot")
+    assert captured["include_delegated"] is True
 
 
 def test_ensure_data_is_exported():

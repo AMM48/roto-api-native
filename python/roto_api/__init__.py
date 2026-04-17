@@ -9,12 +9,8 @@ The package exposes:
 
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING
 
 from .data import ensure_data
-
-if TYPE_CHECKING:
-    from ._native import RotoLookup as _RotoLookupType
 
 try:
     __version__ = version("roto-api-native")
@@ -33,14 +29,17 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def load_lookup(data_dir):
+def load_lookup(data_dir, include_delegated=False):
     """Load the native lookup engine from an already prepared data directory."""
-    return _load_roto_lookup_class().from_data_dir(str(data_dir))
+    return _load_roto_lookup_class().from_data_dir(
+        str(data_dir), include_delegated=include_delegated
+    )
 
 
 def open_lookup(
     data_dir,
     refresh=False,
+    include_delegated=False,
     del_ext_sources=None,
     riswhois_sources=None,
 ):
@@ -52,10 +51,11 @@ def open_lookup(
     data_dir = ensure_data(
         data_dir,
         refresh=refresh,
+        include_delegated=include_delegated,
         del_ext_sources=del_ext_sources,
         riswhois_sources=riswhois_sources,
     )
-    return load_lookup(data_dir)
+    return load_lookup(data_dir, include_delegated=include_delegated)
 
 __all__ = [
     "RotoLookup",

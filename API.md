@@ -12,7 +12,7 @@ Import name:
 
 Download and build the local routing snapshot if needed.
 
-`ensure_data(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+`ensure_data(data_dir, refresh=False, include_delegated=False, del_ext_sources=None, riswhois_sources=None)`
 
 Parameters
 
@@ -25,6 +25,14 @@ Type: `str | os.PathLike`
 `refresh`
 
 - Re-download upstream sources and rebuild the snapshot even if the expected files already exist
+
+Type: `bool`
+Default: `False`
+
+`include_delegated`
+
+- When enabled, also download and build delegated RIR allocation files
+- The default flow is RIS/BGP-only
 
 Type: `bool`
 Default: `False`
@@ -92,10 +100,10 @@ Parameters
 
 - The path to a directory containing a prepared routing snapshot.
 - Required files:
-  - `delegated_all.csv`
   - at least one of `pfx_asn_dfz_v4.csv` or `pfx_asn_dfz_v6.csv`
 - Optional files:
-  - `del_ext.timestamps.json`
+  - `delegated_all.csv` when `include_delegated=True`
+  - `del_ext.timestamps.json` when `include_delegated=True`
   - `riswhois.timestamps.json`
 
 Type: `str | os.PathLike`
@@ -104,7 +112,7 @@ Filename behavior:
 
 - `load_lookup(data_dir)` expects those exact filenames inside `data_dir`
 - It does not search for alternate names
-- If you need custom filenames, use `RotoLookup(prefixes_file, ris_files, timestamps_dir=None)` instead
+- If you need custom filenames, use `RotoLookup(ris_files, prefixes_file=None, timestamps_dir=None)` instead
 
 Return value
 
@@ -113,7 +121,7 @@ Return value
 Exceptions
 
 - `RuntimeError`
-  - If the delegated file cannot be opened or parsed
+  - If an optional delegated file is provided but cannot be opened or parsed
   - If the RIS Whois file cannot be opened or parsed
   - If timestamp metadata exists but is malformed
 - `ValueError`
@@ -131,7 +139,7 @@ lookup = load_lookup("./data")
 
 Ensure the snapshot exists, then load the native lookup engine.
 
-`open_lookup(data_dir, refresh=False, del_ext_sources=None, riswhois_sources=None)`
+`open_lookup(data_dir, refresh=False, include_delegated=False, del_ext_sources=None, riswhois_sources=None)`
 
 Parameters
 
@@ -144,6 +152,13 @@ Type: `str | os.PathLike`
 `refresh`
 
 - Re-download upstream sources before loading
+
+Type: `bool`
+Default: `False`
+
+`include_delegated`
+
+- When enabled, also bootstrap delegated RIR allocation files before loading
 
 Type: `bool`
 Default: `False`
@@ -186,16 +201,9 @@ lookup = open_lookup("./data", refresh=True)
 
 Build a lookup object from explicit file paths.
 
-`RotoLookup(prefixes_file, ris_files, timestamps_dir=None)`
+`RotoLookup(ris_files, prefixes_file=None, timestamps_dir=None)`
 
 Parameters
-
-`prefixes_file`
-
-- Path to the delegated allocations file
-- Normally this is `delegated_all.csv`
-
-Type: `str`
 
 `ris_files`
 
@@ -206,10 +214,17 @@ Type: `str`
 
 Type: `list[str]`
 
+`prefixes_file`
+
+- Optional path to delegated allocation data
+- Normally this is `delegated_all.csv`
+
+Type: `str | None`
+
 `timestamps_dir`
 
 - Directory containing optional timestamp metadata files
-- Defaults to the parent directory of `prefixes_file`
+- Defaults to the parent directory of `prefixes_file` when provided, otherwise the first RIS file's parent directory
 
 Type: `str | None`
 Default: `None`
@@ -231,11 +246,11 @@ Example
 from roto_api import RotoLookup
 
 lookup = RotoLookup(
-    prefixes_file="./data/delegated_all.csv",
     ris_files=[
         "./data/pfx_asn_dfz_v4.csv",
         "./data/pfx_asn_dfz_v6.csv",
     ],
+    prefixes_file="./data/delegated_all.csv",
     timestamps_dir="./data",
 )
 ```
@@ -244,29 +259,38 @@ lookup = RotoLookup(
 
 Build a lookup object from a prepared data directory.
 
-`RotoLookup.from_data_dir(data_dir)`
+`RotoLookup.from_data_dir(data_dir, include_delegated=False)`
 
 Parameters
 
 `data_dir`
 
 - Directory containing:
-  - `delegated_all.csv`
   - at least one of `pfx_asn_dfz_v4.csv` or `pfx_asn_dfz_v6.csv`
 - May also contain:
+  - `delegated_all.csv`
   - `del_ext.timestamps.json`
   - `riswhois.timestamps.json`
 
 Type: `str`
 
+`include_delegated`
+
+- Whether to load `delegated_all.csv` and `del_ext.timestamps.json` from `data_dir`
+
+Type: `bool`
+
+Default: `False`
+
 Filename behavior:
 
-- `RotoLookup.from_data_dir(data_dir)` expects those exact filenames
+- `RotoLookup.from_data_dir(data_dir, include_delegated=False)` expects those exact filenames
 - It automatically looks for:
-  - `delegated_all.csv`
   - `pfx_asn_dfz_v4.csv`
   - `pfx_asn_dfz_v6.csv`
-  - optional timestamp files in the same directory
+  - optional `delegated_all.csv` only when `include_delegated=True`
+  - `riswhois.timestamps.json`
+  - `del_ext.timestamps.json` only when `include_delegated=True`
 - If your files have different names, use the explicit `RotoLookup(...)` constructor
 
 Return value
@@ -286,13 +310,18 @@ Example
 from roto_api import RotoLookup
 
 lookup = RotoLookup.from_data_dir("./data")
+lookup_with_delegated = RotoLookup.from_data_dir(
+    "./data", include_delegated=True
+)
 ```
 
 ### `RotoLookup.lookup_ip`
 
 Run a single-IP longest-prefix lookup.
 
-`lookup_ip(ip)`
+`lookup_ip(ip, min_peer_count=10, mode="overview")`
+
+For exact route/origin validation, use `mode="validation"` and `min_peer_count=0` so low-visibility RIS routes remain visible.
 
 Parameters
 
@@ -302,6 +331,22 @@ Parameters
 
 Type: `str`
 
+`min_peer_count`
+
+- Filter out origin ASNs whose RIS peer count is below this threshold
+- Origins without peer-count metadata are kept
+
+Type: `int`
+Default: `10`
+
+`mode`
+
+- `validation` keeps the matched prefix even if all origins are filtered out
+- `overview` aligns to the first less-specific prefix that still has visible origins after filtering
+
+Type: `str`
+Default: `"overview"`
+
 Return value
 
 A dictionary with these keys:
@@ -310,11 +355,26 @@ A dictionary with these keys:
   - The original input IP
   - Type: `str`
 - `prefix`
-  - The matched longest prefix
+  - The selected prefix after applying the requested lookup mode
+  - Type: `str | None`
+- `matched_prefix`
+  - The exact longest-match prefix before any RIPE-style fallback
   - Type: `str | None`
 - `origin_asns`
   - Origin ASNs attached to the matched RIS entry
   - Type: `list[str]`
+- `origin_peer_counts`
+  - Mapping of origin ASN to the highest RIS peer count seen for that ASN on the matched prefix
+  - Type: `dict[str, int]`
+- `peer_count`
+  - Highest RIS peer count seen among all returned origin ASNs for the matched prefix
+  - Type: `int | None`
+- `is_less_specific`
+  - Whether the returned prefix is a less-specific fallback instead of the exact match
+  - Type: `bool`
+- `mode`
+  - The lookup mode used for the result
+  - Type: `str`
 - `match_type`
   - Match result type
   - Type: `str`
@@ -330,13 +390,24 @@ Example
 result = lookup.lookup_ip("8.8.8.8")
 print(result["prefix"])
 print(result["origin_asns"])
+print(result["peer_count"])
+
+all_origins = lookup.lookup_ip("8.8.8.8", min_peer_count=0)
+print(all_origins["origin_asns"])
+
+overview = lookup.lookup_ip(
+    "151.101.2.133",
+    min_peer_count=10,
+    mode="overview",
+)
+print(overview["prefix"], overview["matched_prefix"], overview["is_less_specific"])
 ```
 
 ### `RotoLookup.lookup_ips`
 
 Run longest-prefix lookup for multiple IPs in one Rust call.
 
-`lookup_ips(ips)`
+`lookup_ips(ips, min_peer_count=10, mode="overview")`
 
 Parameters
 
@@ -345,6 +416,22 @@ Parameters
 - IPv4 and/or IPv6 addresses to look up
 
 Type: `list[str]`
+
+`min_peer_count`
+
+- Filter out origin ASNs whose RIS peer count is below this threshold
+- Origins without peer-count metadata are kept
+
+Type: `int`
+Default: `10`
+
+`mode`
+
+- `validation` keeps the matched prefix even if all origins are filtered out
+- `overview` aligns to the first less-specific prefix that still has visible origins after filtering
+
+Type: `str`
+Default: `"overview"`
 
 Return value
 
@@ -420,7 +507,7 @@ If you generate the snapshot yourself and then call `load_lookup(...)` or `RotoL
 
 `delegated_all.csv`
 
-- Pipe-delimited delegated-extended records
+- Optional pipe-delimited delegated-extended records, loaded only when delegated data is enabled
 - No header row required
 - The first row is treated as data
 
@@ -428,6 +515,7 @@ If you generate the snapshot yourself and then call `load_lookup(...)` or `RotoL
 
 - Comma-separated records
 - Row format: `prefix,length,asn`
+- Peer-aware snapshots may include an optional fourth column: `prefix,length,asn,peer_count`
 - No header row required
 - The first row is treated as data
 
@@ -435,6 +523,7 @@ If you generate the snapshot yourself and then call `load_lookup(...)` or `RotoL
 
 - Comma-separated records
 - Row format: `prefix,length,asn`
+- Peer-aware snapshots may include an optional fourth column: `prefix,length,asn,peer_count`
 - No header row required
 - The first row is treated as data
 
